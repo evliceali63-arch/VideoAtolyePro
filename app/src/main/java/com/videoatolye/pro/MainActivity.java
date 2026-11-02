@@ -33,6 +33,9 @@ public class MainActivity extends Activity {
     private int brightness = 0;
     private int contrast = 100, saturation = 100;
     private boolean flipHorizontal = false;
+    private boolean flipVertical = false;
+    private int cropMode = 0;
+    private int grayscale = 0;
     private VideoView videoPreview;
     private static final int PHOTO = 101, VIDEO = 102, SAVE = 103;
 
@@ -95,7 +98,10 @@ public class MainActivity extends Activity {
         if (photo != null) showPhoto();
         button("90° döndür", () -> { rotation = (rotation + 90) % 360; showPhoto(); });
         button("Yatay çevir", () -> { flipHorizontal = !flipHorizontal; showPhoto(); });
-        button("Düzenlemeleri sıfırla", () -> { rotation=0; brightness=0; contrast=100; saturation=100; flipHorizontal=false; photoEditor(); });
+        button("Dikey çevir", () -> { flipVertical = !flipVertical; showPhoto(); });
+        button("Kadraj değiştir (Tam / Kare / 4:5 / 9:16 / 16:9)", () -> { cropMode = (cropMode + 1) % 5; showPhoto(); toast(new String[]{"Tam kadraj","1:1 kare","4:5 dikey","9:16 hikâye","16:9 yatay"}[cropMode]); });
+        button("Siyah-beyaz filtre", () -> { grayscale = grayscale == 0 ? 1 : 0; showPhoto(); });
+        button("Düzenlemeleri sıfırla", () -> { rotation=0; brightness=0; contrast=100; saturation=100; flipHorizontal=false; flipVertical=false; cropMode=0; grayscale=0; photoEditor(); });
         label("Parlaklık", 16);
         SeekBar light = new SeekBar(this);
         light.setMax(200);
@@ -134,8 +140,18 @@ public class MainActivity extends Activity {
     private Bitmap rotated() {
         Matrix matrix = new Matrix();
         matrix.postRotate(rotation);
-        if (flipHorizontal) matrix.postScale(-1f, 1f);
-        return Bitmap.createBitmap(photo, 0, 0, photo.getWidth(), photo.getHeight(), matrix, true);
+        if (flipHorizontal || flipVertical) matrix.postScale(flipHorizontal ? -1f : 1f, flipVertical ? -1f : 1f);
+        Bitmap transformed = Bitmap.createBitmap(photo, 0, 0, photo.getWidth(), photo.getHeight(), matrix, true);
+        if (cropMode == 0) return transformed;
+        float[] ratios = {0f,1f,4f/5f,9f/16f,16f/9f};
+        float target = ratios[cropMode];
+        int w = transformed.getWidth(), h = transformed.getHeight();
+        int cropW = w, cropH = h;
+        if ((float)w/h > target) cropW = Math.max(1,Math.round(h*target));
+        else cropH = Math.max(1,Math.round(w/target));
+        Bitmap cropped = Bitmap.createBitmap(transformed,(w-cropW)/2,(h-cropH)/2,cropW,cropH);
+        if (cropped != transformed && transformed != photo) transformed.recycle();
+        return cropped;
     }
     private ColorMatrixColorFilter photoFilter() {
         float c = contrast / 100f;
@@ -147,7 +163,7 @@ public class MainActivity extends Activity {
             0,0,0,1,0
         });
         ColorMatrix saturationMatrix = new ColorMatrix();
-        saturationMatrix.setSaturation(saturation / 100f);
+        saturationMatrix.setSaturation(grayscale == 1 ? 0f : saturation / 100f);
         matrix.postConcat(saturationMatrix);
         return new ColorMatrixColorFilter(matrix);
     }
@@ -278,7 +294,7 @@ public class MainActivity extends Activity {
                 }
                 rotation = 0;
                 brightness = 0;
-                contrast = 100; saturation = 100; flipHorizontal = false;
+                contrast = 100; saturation = 100; flipHorizontal = false; flipVertical = false; cropMode = 0; grayscale = 0;
                 photoEditor();
             } else if (request == VIDEO) {
                 video = uri;
