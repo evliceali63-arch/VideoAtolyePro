@@ -40,6 +40,8 @@ public class MainActivity extends Activity {
     private int captionSize = 42;
     private boolean videoMuted = false;
     private float videoSpeed = 1f;
+    private boolean exportMute = false;
+    private int videoRotation = 0;
     private VideoView videoPreview;
     private static final int PHOTO = 101, VIDEO = 102, SAVE = 103;
 
@@ -241,6 +243,9 @@ public class MainActivity extends Activity {
                 videoPreview.setVideoURI(video);
             } else toast("Ses kontrolü bu Android sürümünde desteklenmiyor");
         });
+        button("Başa sar", () -> videoPreview.seekTo(0));
+        button("Dışa aktarmada sesi kaldır: " + (exportMute ? "EVET" : "HAYIR"), () -> { exportMute = !exportMute; videoEditor(); });
+        button("Dışa aktarmada 90° döndür", () -> { videoRotation=(videoRotation+90)%360; toast("Döndürme: "+videoRotation+" derece"); });
         button("▶ Oynat / Duraklat", () -> {
             if (videoPreview.isPlaying()) videoPreview.pause(); else videoPreview.start();
         });
@@ -288,12 +293,13 @@ public class MainActivity extends Activity {
                 output = getContentResolver().openFileDescriptor(destination, "w");
                 if (output == null) throw new IllegalStateException("Hedef dosya açılamadı");
                 muxer = new MediaMuxer(output.getFileDescriptor(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+                muxer.setOrientationHint(videoRotation);
                 int count = extractor.getTrackCount();
                 int[] mapping = new int[count];
                 for (int i=0;i<count;i++) {
                     MediaFormat format = extractor.getTrackFormat(i);
                     String mime = format.getString(MediaFormat.KEY_MIME);
-                    if (mime != null && (mime.startsWith("video/") || mime.startsWith("audio/"))) {
+                    if (mime != null && (mime.startsWith("video/") || (!exportMute && mime.startsWith("audio/")))) {
                         mapping[i] = muxer.addTrack(format);
                         extractor.selectTrack(i);
                     } else mapping[i] = -1;
