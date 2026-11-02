@@ -31,6 +31,8 @@ public class MainActivity extends Activity {
     private long videoDurationMs = 0;
     private int trimStart = 0, trimEnd = 100;
     private int brightness = 0;
+    private int contrast = 100, saturation = 100;
+    private boolean flipHorizontal = false;
     private VideoView videoPreview;
     private static final int PHOTO = 101, VIDEO = 102, SAVE = 103;
 
@@ -66,7 +68,7 @@ public class MainActivity extends Activity {
     }
     private void home() {
         screen("Video Atölye Pro");
-        label("v0.1 • Android başlangıç sürümü", 15);
+        label("Video Atölye Pro • Geliştirme sürümü", 15);
         button("📸 Fotoğraf düzenle", () -> photoEditor());
         button("🎬 Video seç", () -> videoEditor());
         button("✨ Otomatik montaj (geliştiriliyor)", () -> planned("Otomatik montaj"));
@@ -92,6 +94,8 @@ public class MainActivity extends Activity {
         layout.addView(preview);
         if (photo != null) showPhoto();
         button("90° döndür", () -> { rotation = (rotation + 90) % 360; showPhoto(); });
+        button("Yatay çevir", () -> { flipHorizontal = !flipHorizontal; showPhoto(); });
+        button("Düzenlemeleri sıfırla", () -> { rotation=0; brightness=0; contrast=100; saturation=100; flipHorizontal=false; photoEditor(); });
         label("Parlaklık", 16);
         SeekBar light = new SeekBar(this);
         light.setMax(200);
@@ -99,6 +103,22 @@ public class MainActivity extends Activity {
         layout.addView(light);
         light.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar b, int value, boolean user) { brightness = value - 100; showPhoto(); }
+            public void onStartTrackingTouch(SeekBar b) {}
+            public void onStopTrackingTouch(SeekBar b) {}
+        });
+        label("Kontrast", 16);
+        SeekBar contrastBar = new SeekBar(this);
+        contrastBar.setMax(200); contrastBar.setProgress(contrast); layout.addView(contrastBar);
+        contrastBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar b,int value,boolean user) { contrast=value; showPhoto(); }
+            public void onStartTrackingTouch(SeekBar b) {}
+            public void onStopTrackingTouch(SeekBar b) {}
+        });
+        label("Renk doygunluğu", 16);
+        SeekBar saturationBar = new SeekBar(this);
+        saturationBar.setMax(200); saturationBar.setProgress(saturation); layout.addView(saturationBar);
+        saturationBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar b,int value,boolean user) { saturation=value; showPhoto(); }
             public void onStartTrackingTouch(SeekBar b) {}
             public void onStopTrackingTouch(SeekBar b) {}
         });
@@ -114,13 +134,27 @@ public class MainActivity extends Activity {
     private Bitmap rotated() {
         Matrix matrix = new Matrix();
         matrix.postRotate(rotation);
+        if (flipHorizontal) matrix.postScale(-1f, 1f);
         return Bitmap.createBitmap(photo, 0, 0, photo.getWidth(), photo.getHeight(), matrix, true);
+    }
+    private ColorMatrixColorFilter photoFilter() {
+        float c = contrast / 100f;
+        float offset = (1f-c)*127.5f + brightness;
+        ColorMatrix matrix = new ColorMatrix(new float[]{
+            c,0,0,0,offset,
+            0,c,0,0,offset,
+            0,0,c,0,offset,
+            0,0,0,1,0
+        });
+        ColorMatrix saturationMatrix = new ColorMatrix();
+        saturationMatrix.setSaturation(saturation / 100f);
+        matrix.postConcat(saturationMatrix);
+        return new ColorMatrixColorFilter(matrix);
     }
     private void showPhoto() {
         if (preview != null && photo != null) {
             preview.setImageBitmap(rotated());
-            ColorMatrix cm = new ColorMatrix(new float[]{1,0,0,0,brightness, 0,1,0,0,brightness, 0,0,1,0,brightness, 0,0,0,1,0});
-            preview.setColorFilter(new ColorMatrixColorFilter(cm));
+            preview.setColorFilter(photoFilter());
         }
     }
     private void videoEditor() {
@@ -244,6 +278,7 @@ public class MainActivity extends Activity {
                 }
                 rotation = 0;
                 brightness = 0;
+                contrast = 100; saturation = 100; flipHorizontal = false;
                 photoEditor();
             } else if (request == VIDEO) {
                 video = uri;
@@ -255,7 +290,7 @@ public class MainActivity extends Activity {
                 try (OutputStream output = getContentResolver().openOutputStream(uri)) {
                     if (output == null) throw new IllegalStateException("Çıktı açılamadı");
                     android.graphics.Paint paint = new android.graphics.Paint();
-                    paint.setColorFilter(new ColorMatrixColorFilter(new ColorMatrix(new float[]{1,0,0,0,brightness,0,1,0,0,brightness,0,0,1,0,brightness,0,0,0,1,0})));
+                    paint.setColorFilter(photoFilter());
                     Bitmap processedBitmap = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), Bitmap.Config.ARGB_8888);
                     new android.graphics.Canvas(processedBitmap).drawBitmap(bitmap, 0, 0, paint);
                     processedBitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
