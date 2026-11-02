@@ -256,10 +256,10 @@ public class MainActivity extends Activity {
                     if (output == null) throw new IllegalStateException("Çıktı açılamadı");
                     android.graphics.Paint paint = new android.graphics.Paint();
                     paint.setColorFilter(new ColorMatrixColorFilter(new ColorMatrix(new float[]{1,0,0,0,brightness,0,1,0,0,brightness,0,0,1,0,brightness,0,0,0,1,0})));
-                    Bitmap result = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), Bitmap.Config.ARGB_8888);
-                    new android.graphics.Canvas(result).drawBitmap(bitmap, 0, 0, paint);
-                    result.compress(Bitmap.CompressFormat.PNG, 100, output);
-                    result.recycle();
+                    Bitmap processedBitmap = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), Bitmap.Config.ARGB_8888);
+                    new android.graphics.Canvas(processedBitmap).drawBitmap(bitmap, 0, 0, paint);
+                    processedBitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
+                    processedBitmap.recycle();
                 }
                 if (bitmap != photo) bitmap.recycle();
                 toast("Fotoğraf kaydedildi");
