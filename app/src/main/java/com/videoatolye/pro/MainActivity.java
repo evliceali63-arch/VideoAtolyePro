@@ -152,27 +152,97 @@ public class MainActivity extends Activity {
         intent.putExtra(Intent.EXTRA_TITLE,name);startActivityForResult(intent,code);
     }
     private void photoEditor() {
-        screen("Fotoğraf editörü");
-        button("Galeriden fotoğraf aç",()->pick("image/*",PHOTO));
-        preview=new ImageView(this);
+        screen("Fotoğraf Stüdyosu");
+        button("＋ Fotoğraf aç", () -> pick("image/*", PHOTO));
+        if (photo == null) {
+            label("Düzenlemek için galeriden bir fotoğraf seç.", 16);
+            return;
+        }
+        preview = new ImageView(this);
         preview.setAdjustViewBounds(true);
         preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        preview.setBackgroundColor(0xff080a10);
-        layout.addView(preview,new LinearLayout.LayoutParams(-1,photo==null?340:540));
-        if(photo!=null)showPhoto();
-        HorizontalScrollView tabs=new HorizontalScrollView(this);
-        tabs.setHorizontalScrollBarEnabled(false);
-        LinearLayout tabRow=new LinearLayout(this);
-        tabRow.setOrientation(LinearLayout.HORIZONTAL);
-        tabs.addView(tabRow);layout.addView(tabs);
-        for(String tab:new String[]{"Kadraj","Renk","Yazı","Kaydet"}) {
-            Button item=new Button(this);item.setText(tab);item.setAllCaps(false);
-            tabRow.addView(item);item.setOnClickListener(v->photoTab(tab));
+        preview.setBackgroundColor(0xff080a0f);
+        layout.addView(preview, new LinearLayout.LayoutParams(-1, -2));
+        showPhoto();
+        button("↶ Tüm düzenlemeleri sıfırla", () -> {
+            rotation=0; brightness=0; contrast=100; saturation=100;
+            warmth=0; vignette=0; grayscale=0; cropMode=0;
+            flipHorizontal=false; flipVertical=false;
+            photoCaption=""; captionSize=42; photoPreset=0; photoEditor();
+        });
+        button("✂ Kadraj ve döndürme", () -> photoTools("crop"));
+        button("☀ Işık ve renk", () -> photoTools("color"));
+        button("✨ Filtreler ve efektler", () -> photoTools("effects"));
+        button("T Yazı ekle", () -> photoTools("text"));
+        button("⬇ PNG olarak dışa aktar", () -> savePhoto(false));
+        button("⬇ JPG olarak dışa aktar", () -> savePhoto(true));
+    }
+    private void photoTools(String section) {
+        screen(section.equals("crop") ? "Kadraj ve döndürme" :
+            section.equals("color") ? "Işık ve renk" :
+            section.equals("effects") ? "Filtreler ve efektler" : "Yazı");
+        button("← Fotoğraf stüdyosuna dön", () -> photoEditor());
+        preview = new ImageView(this);
+        preview.setAdjustViewBounds(true);
+        preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        layout.addView(preview,new LinearLayout.LayoutParams(-1,-2));
+        showPhoto();
+        if(section.equals("crop")) {
+            button("90° sağa döndür", () -> {rotation=(rotation+90)%360;showPhoto();});
+            button("90° sola döndür", () -> {rotation=(rotation+270)%360;showPhoto();});
+            button("Yatay çevir", () -> {flipHorizontal=!flipHorizontal;showPhoto();});
+            button("Dikey çevir", () -> {flipVertical=!flipVertical;showPhoto();});
+            button("Kadraj: "+new String[]{"Orijinal","1:1","4:5","9:16","16:9"}[cropMode], () -> {
+                cropMode=(cropMode+1)%5;photoTools("crop");
+            });
+        } else if(section.equals("color")) {
+            photoSlider("Parlaklık",brightness+100,200,v -> brightness=v-100);
+            photoSlider("Kontrast",contrast,200,v -> contrast=v);
+            photoSlider("Renk doygunluğu",saturation,200,v -> saturation=v);
+            photoSlider("Sıcaklık",warmth+100,200,v -> warmth=v-100);
+        } else if(section.equals("effects")) {
+            button("Doğal", () -> {photoPreset=0;brightness=0;contrast=100;saturation=100;warmth=0;vignette=0;grayscale=0;photoTools("effects");});
+            button("Canlı", () -> {photoPreset=1;brightness=6;contrast=115;saturation=135;warmth=5;vignette=0;grayscale=0;photoTools("effects");});
+            button("Sinematik", () -> {photoPreset=2;brightness=-8;contrast=125;saturation=80;warmth=-12;vignette=30;grayscale=0;photoTools("effects");});
+            button("Vintage", () -> {photoPreset=3;brightness=8;contrast=90;saturation=70;warmth=24;vignette=35;grayscale=0;photoTools("effects");});
+            button("Siyah beyaz: "+(grayscale==1?"Açık":"Kapalı"), () -> {grayscale=1-grayscale;photoTools("effects");});
+            photoSlider("Kenar karartma",vignette,100,v -> vignette=v);
+        } else {
+            EditText captionInput=new EditText(this);
+            captionInput.setSingleLine(true);
+            captionInput.setTextColor(0xffffffff);
+            captionInput.setHintTextColor(0xffaaaaaa);
+            captionInput.setHint("Fotoğrafa yazı ekle");
+            captionInput.setText(photoCaption);
+            layout.addView(captionInput);
+            button("Yazıyı uygula", () -> {photoCaption=captionInput.getText().toString();showPhoto();});
+            button("Yazıyı kaldır", () -> {photoCaption="";captionInput.setText("");showPhoto();});
+            photoSlider("Yazı boyutu",captionSize,100,v -> captionSize=Math.max(12,v));
         }
-        photoTools=new LinearLayout(this);
-        photoTools.setOrientation(LinearLayout.VERTICAL);
-        layout.addView(photoTools);
-        photoTab("Kadraj");
+        button("✓ Düzenlemeyi uygula", () -> photoEditor());
+    }
+    private interface SliderChange { void apply(int value); }
+    private void photoSlider(String title,int value,int max,SliderChange change) {
+        label(title,16);
+        SeekBar slider=new SeekBar(this);
+        slider.setMax(max);
+        slider.setProgress(value);
+        layout.addView(slider);
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar bar,int v,boolean user){
+                if(user){change.apply(v);showPhoto();}
+            }
+            public void onStartTrackingTouch(SeekBar bar){}
+            public void onStopTrackingTouch(SeekBar bar){}
+        });
+    }
+    private void savePhoto(boolean jpeg) {
+        if(photo==null){toast("Önce fotoğraf seç");return;}
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.setType(jpeg?"image/jpeg":"image/png");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.putExtra(Intent.EXTRA_TITLE,jpeg?"video_atolye_fotograf.jpg":"video_atolye_fotograf.png");
+        startActivityForResult(intent,jpeg?107:SAVE);
     }
     private Bitmap rotated() {
         Matrix matrix = new Matrix();
