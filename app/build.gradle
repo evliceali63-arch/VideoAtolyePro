@@ -1,0 +1,3 @@
+plugins { id 'com.android.application' }
+android { namespace 'com.videoatolye.pro'; compileSdk 35
+ defaultConfig { applicationId 'com.videoatolye.pro'; minSdk 26; targetSdk 28; versionCode 1; versionName '0.1.0' } }
