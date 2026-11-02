@@ -38,6 +38,9 @@ public class MainActivity extends Activity {
     private int grayscale = 0;
     private String photoCaption = "";
     private int captionSize = 42;
+    private int warmth = 0;
+    private int vignette = 0;
+    private int photoPreset = 0;
     private boolean videoMuted = false;
     private float videoSpeed = 1f;
     private boolean exportMute = false;
@@ -208,6 +211,16 @@ public class MainActivity extends Activity {
         android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG | android.graphics.Paint.FILTER_BITMAP_FLAG);
         paint.setColorFilter(photoFilter());
         canvas.drawBitmap(bitmap,0,0,paint);
+        if(vignette>0){
+            float cx=output.getWidth()/2f,cy=output.getHeight()/2f;
+            float radius=(float)Math.hypot(cx,cy);
+            android.graphics.RadialGradient gradient=new android.graphics.RadialGradient(cx,cy,radius,
+                new int[]{0x00000000,0x00000000,((Math.min(220,vignette*2))<<24)},
+                new float[]{0f,0.50f,1f},android.graphics.Shader.TileMode.CLAMP);
+            android.graphics.Paint shade=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            shade.setShader(gradient);
+            canvas.drawRect(0,0,output.getWidth(),output.getHeight(),shade);
+        }
         if (!photoCaption.isEmpty()) {
             android.graphics.Paint shadow = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
             float size = Math.max(20f, output.getWidth() * captionSize / 900f);
@@ -366,7 +379,7 @@ public class MainActivity extends Activity {
                 }
                 rotation = 0;
                 brightness = 0;
-                contrast = 100; saturation = 100; flipHorizontal = false; flipVertical = false; cropMode = 0; grayscale = 0; photoCaption = ""; captionSize = 42;
+                contrast = 100; saturation = 100; flipHorizontal = false; flipVertical = false; cropMode = 0; grayscale = 0; photoCaption = ""; captionSize = 42; warmth=0; vignette=0; photoPreset=0;
                 photoEditor();
             } else if (request == VIDEO) {
                 video = uri;
