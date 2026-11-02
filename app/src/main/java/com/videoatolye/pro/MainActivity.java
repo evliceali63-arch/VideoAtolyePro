@@ -85,9 +85,126 @@ public class MainActivity extends Activity {
         label("Video Atölye Pro • Geliştirme sürümü", 15);
         button("📸 Fotoğraf düzenle", () -> photoEditor());
         button("🎬 Video seç", () -> videoEditor());
+        button("🎞 Çoklu video montaj", () -> montageStudio());
         button("✨ Otomatik montaj (geliştiriliyor)", () -> planned("Otomatik montaj"));
         button("✍️ Yazarak montaj (geliştiriliyor)", () -> planned("Yazarak montaj"));
         button("🎵 Ses stüdyosu", () -> audioStudio());
+    }
+
+    private final java.util.ArrayList<Uri> montageClips = new java.util.ArrayList<>();
+    private static final int MONTAGE_PICK=109, MONTAGE_SAVE=110;
+    private void montageStudio(){
+        screen("Çoklu Video Montaj");
+        label("Birden fazla klip seç, sırasını değiştir ve uyumlu klipleri tek MP4 dosyasında birleştir.",16);
+        button("＋ Video ekle",()->{
+            Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.setType("video/*");i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);
+            startActivityForResult(i,MONTAGE_PICK);
+        });
+        for(int n=0;n<montageClips.size();n++){
+            final int index=n;
+            label((n+1)+". "+montageClips.get(n).getLastPathSegment(),14);
+            button("↑ Öne taşı",()->{if(index>0){java.util.Collections.swap(montageClips,index,index-1);montageStudio();}});
+            button("✕ Çıkar",()->{montageClips.remove(index);montageStudio();});
+        }
+        button("Listeyi temizle",()->{montageClips.clear();montageStudio();});
+        button("⬇ MP4 birleştir",()->{
+            if(montageClips.size()<2){toast("En az iki video ekle");return;}
+            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            i.setType("video/mp4");i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.putExtra(Intent.EXTRA_TITLE,"video_atolye_montaj.mp4");
+            startActivityForResult(i,MONTAGE_SAVE);
+        });
+        label("Hızlı birleştirme: aynı kodek, çözünürlük ve ses biçimindeki klipler desteklenir. Geçiş efektleri ve farklı biçimleri dönüştürme henüz yok.",14);
+    }
+    private void exportMontage(Uri destination){
+        final java.util.ArrayList<Uri> clips=new java.util.ArrayList<>(montageClips);
+        new Thread(()->{
+            MediaMuxer muxer=null;
+            android.os.ParcelFileDescriptor output=null;
+            boolean started=false,done=false;
+            try{
+                output=getContentResolver().openFileDescriptor(destination,"w");
+                if(output==null)throw new Exception("Çıktı açılamadı");
+                muxer=new MediaMuxer(output.getFileDescriptor(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+                java.util.ArrayList<MediaFormat> reference=new java.util.ArrayList<>();
+                int[] outputTracks=null;
+                long timeline=0;
+                for(int clip=0;clip<clips.size();clip++){
+                    MediaExtractor extractor=new MediaExtractor();
+                    try{
+                        extractor.setDataSource(this,clips.get(clip),null);
+                        java.util.ArrayList<MediaFormat> formats=new java.util.ArrayList<>();
+                        java.util.ArrayList<Integer> tracks=new java.util.ArrayList<>();
+                        for(int t=0;t<extractor.getTrackCount();t++){
+                            MediaFormat format=extractor.getTrackFormat(t);
+                            String mime=format.getString(MediaFormat.KEY_MIME);
+                            if(mime!=null&&(mime.startsWith("video/")||mime.startsWith("audio/"))){
+                                formats.add(format);tracks.add(t);
+                            }
+                        }
+                        if(formats.isEmpty())throw new Exception("Klipte medya izi yok");
+                        if(clip==0){
+                            outputTracks=new int[formats.size()];
+                            for(int t=0;t<formats.size();t++){
+                                reference.add(formats.get(t));
+                                outputTracks[t]=muxer.addTrack(formats.get(t));
+                            }
+                            muxer.start();started=true;
+                        }else{
+                            if(formats.size()!=reference.size())throw new Exception("Kliplerin iz sayısı farklı");
+                            for(int t=0;t<formats.size();t++){
+                                MediaFormat a=reference.get(t),b=formats.get(t);
+                                if(!a.getString(MediaFormat.KEY_MIME).equals(b.getString(MediaFormat.KEY_MIME)))
+                                    throw new Exception("Kliplerin kodekleri farklı");
+                                for(String key:new String[]{MediaFormat.KEY_WIDTH,MediaFormat.KEY_HEIGHT,MediaFormat.KEY_SAMPLE_RATE,MediaFormat.KEY_CHANNEL_COUNT}){
+                                    if(a.containsKey(key)!=b.containsKey(key)||(a.containsKey(key)&&a.getInteger(key)!=b.getInteger(key)))
+                                        throw new Exception("Kliplerin biçimleri farklı");
+                                }
+                            }
+                        }
+                        long clipLength=0;
+                        ByteBuffer buffer=ByteBuffer.allocateDirect(8*1024*1024);
+                        MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
+                        for(int t=0;t<tracks.size();t++){
+                            extractor.selectTrack(tracks.get(t));
+                            extractor.seekTo(0,MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+                            long first=-1,last=-1;
+                            while(extractor.getSampleTrackIndex()>=0){
+                                if(extractor.getSampleTrackIndex()!=tracks.get(t)){
+                                    extractor.advance();continue;
+                                }
+                                long stamp=extractor.getSampleTime();
+                                if(first<0)first=stamp;
+                                buffer.clear();
+                                int size=extractor.readSampleData(buffer,0);
+                                if(size<0)break;
+                                info.offset=0;info.size=size;
+                                info.presentationTimeUs=timeline+Math.max(0,stamp-first);
+                                info.flags=extractor.getSampleFlags();
+                                muxer.writeSampleData(outputTracks[t],buffer,info);
+                                last=stamp;
+                                if(!extractor.advance())break;
+                            }
+                            if(last>=first&&first>=0)clipLength=Math.max(clipLength,last-first+33333);
+                            extractor.unselectTrack(tracks.get(t));
+                            extractor.seekTo(0,MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+                        }
+                        timeline+=Math.max(33333,clipLength);
+                    }finally{extractor.release();}
+                }
+                muxer.stop();started=false;done=true;
+                runOnUiThread(()->toast("Montaj MP4 kaydedildi"));
+            }catch(Exception e){
+                final String message=e.getMessage();
+                runOnUiThread(()->toast("Birleştirme başarısız: "+message));
+            }finally{
+                if(muxer!=null)try{if(started)muxer.stop();}catch(Exception ignored){}
+                if(muxer!=null)try{muxer.release();}catch(Exception ignored){}
+                if(output!=null)try{output.close();}catch(Exception ignored){}
+            }
+        }).start();
     }
     private void audioStudio() {
         screen("Ses Stüdyosu");
@@ -506,10 +623,18 @@ public class MainActivity extends Activity {
     private void toast(String message) { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (result != RESULT_OK || data == null || data.getData() == null) return;
+        if (result != RESULT_OK || data == null) return;
+        if (request == MONTAGE_PICK) {
+            if (data.getClipData() != null) {
+                for (int i=0;i<data.getClipData().getItemCount();i++)
+                    montageClips.add(data.getClipData().getItemAt(i).getUri());
+            } else if (data.getData()!=null) montageClips.add(data.getData());
+            montageStudio();return;
+        }
+        if(data.getData()==null)return;
         Uri uri = data.getData();
         try {
-            if (request == PHOTO) {
+            if (request == MONTAGE_SAVE) { exportMontage(uri); } else if (request == PHOTO) {
                 BitmapFactory.Options options = new BitmapFactory.Options();
                 options.inJustDecodeBounds = true;
                 try (InputStream input = getContentResolver().openInputStream(uri)) {
