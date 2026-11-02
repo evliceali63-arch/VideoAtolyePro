@@ -36,6 +36,10 @@ public class MainActivity extends Activity {
     private boolean flipVertical = false;
     private int cropMode = 0;
     private int grayscale = 0;
+    private String photoCaption = "";
+    private int captionSize = 42;
+    private boolean videoMuted = false;
+    private float videoSpeed = 1f;
     private VideoView videoPreview;
     private static final int PHOTO = 101, VIDEO = 102, SAVE = 103;
 
@@ -101,7 +105,7 @@ public class MainActivity extends Activity {
         button("Dikey çevir", () -> { flipVertical = !flipVertical; showPhoto(); });
         button("Kadraj değiştir (Tam / Kare / 4:5 / 9:16 / 16:9)", () -> { cropMode = (cropMode + 1) % 5; showPhoto(); toast(new String[]{"Tam kadraj","1:1 kare","4:5 dikey","9:16 hikâye","16:9 yatay"}[cropMode]); });
         button("Siyah-beyaz filtre", () -> { grayscale = grayscale == 0 ? 1 : 0; showPhoto(); });
-        button("Düzenlemeleri sıfırla", () -> { rotation=0; brightness=0; contrast=100; saturation=100; flipHorizontal=false; flipVertical=false; cropMode=0; grayscale=0; photoEditor(); });
+        button("Düzenlemeleri sıfırla", () -> { rotation=0; brightness=0; contrast=100; saturation=100; flipHorizontal=false; flipVertical=false; cropMode=0; grayscale=0; photoCaption=""; captionSize=42; photoEditor(); });
         label("Parlaklık", 16);
         SeekBar light = new SeekBar(this);
         light.setMax(200);
@@ -125,6 +129,24 @@ public class MainActivity extends Activity {
         saturationBar.setMax(200); saturationBar.setProgress(saturation); layout.addView(saturationBar);
         saturationBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar b,int value,boolean user) { saturation=value; showPhoto(); }
+            public void onStartTrackingTouch(SeekBar b) {}
+            public void onStopTrackingTouch(SeekBar b) {}
+        });
+        label("Fotoğrafa yazı ekle", 16);
+        EditText captionInput = new EditText(this);
+        captionInput.setSingleLine(true);
+        captionInput.setTextColor(0xffffffff);
+        captionInput.setHintTextColor(0xffbbbbbb);
+        captionInput.setHint("Fotoğrafın üzerine yazılacak metin");
+        captionInput.setText(photoCaption);
+        layout.addView(captionInput);
+        button("Yazıyı uygula / güncelle", () -> { photoCaption = captionInput.getText().toString(); showPhoto(); });
+        button("Yazıyı kaldır", () -> { photoCaption = ""; captionInput.setText(""); showPhoto(); });
+        label("Yazı boyutu", 16);
+        SeekBar captionBar = new SeekBar(this);
+        captionBar.setMax(100); captionBar.setProgress(captionSize); layout.addView(captionBar);
+        captionBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar b,int v,boolean user) { captionSize = Math.max(12,v); showPhoto(); }
             public void onStartTrackingTouch(SeekBar b) {}
             public void onStopTrackingTouch(SeekBar b) {}
         });
@@ -167,10 +189,31 @@ public class MainActivity extends Activity {
         matrix.postConcat(saturationMatrix);
         return new ColorMatrixColorFilter(matrix);
     }
+    private Bitmap renderPhoto() {
+        Bitmap bitmap = rotated();
+        Bitmap output = Bitmap.createBitmap(bitmap.getWidth(),bitmap.getHeight(),Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas canvas = new android.graphics.Canvas(output);
+        android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG | android.graphics.Paint.FILTER_BITMAP_FLAG);
+        paint.setColorFilter(photoFilter());
+        canvas.drawBitmap(bitmap,0,0,paint);
+        if (!photoCaption.isEmpty()) {
+            android.graphics.Paint shadow = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            float size = Math.max(20f, output.getWidth() * captionSize / 900f);
+            shadow.setTextSize(size);
+            shadow.setTypeface(android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD));
+            shadow.setTextAlign(android.graphics.Paint.Align.CENTER);
+            shadow.setColor(0xffffffff);
+            shadow.setShadowLayer(size/8f,2f,2f,0xff000000);
+            float x = output.getWidth()/2f, y = output.getHeight()*0.86f;
+            canvas.drawText(photoCaption,x,y,shadow);
+        }
+        if (bitmap != photo) bitmap.recycle();
+        return output;
+    }
     private void showPhoto() {
         if (preview != null && photo != null) {
-            preview.setImageBitmap(rotated());
-            preview.setColorFilter(photoFilter());
+            preview.setImageBitmap(renderPhoto());
+            preview.clearColorFilter();
         }
     }
     private void videoEditor() {
@@ -184,6 +227,19 @@ public class MainActivity extends Activity {
             videoDurationMs = mp.getDuration();
             mp.setLooping(true);
             videoPreview.start();
+        });
+        button("⏪ 10 saniye geri", () -> videoPreview.seekTo(Math.max(0,videoPreview.getCurrentPosition()-10000)));
+        button("⏩ 10 saniye ileri", () -> videoPreview.seekTo(Math.min(videoPreview.getDuration(),videoPreview.getCurrentPosition()+10000)));
+        button("🔇 Sesi aç / kapat", () -> {
+            videoMuted = !videoMuted;
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                videoPreview.setOnPreparedListener(mp -> {
+                    mp.setVolume(videoMuted ? 0f : 1f,videoMuted ? 0f : 1f);
+                    mp.setLooping(true);
+                    mp.start();
+                });
+                videoPreview.setVideoURI(video);
+            } else toast("Ses kontrolü bu Android sürümünde desteklenmiyor");
         });
         button("▶ Oynat / Duraklat", () -> {
             if (videoPreview.isPlaying()) videoPreview.pause(); else videoPreview.start();
@@ -294,7 +350,7 @@ public class MainActivity extends Activity {
                 }
                 rotation = 0;
                 brightness = 0;
-                contrast = 100; saturation = 100; flipHorizontal = false; flipVertical = false; cropMode = 0; grayscale = 0;
+                contrast = 100; saturation = 100; flipHorizontal = false; flipVertical = false; cropMode = 0; grayscale = 0; photoCaption = ""; captionSize = 42;
                 photoEditor();
             } else if (request == VIDEO) {
                 video = uri;
@@ -302,17 +358,12 @@ public class MainActivity extends Activity {
             } else if (request == 104 && video != null) {
                 trimVideo(uri);
             } else if (request == SAVE && photo != null) {
-                Bitmap bitmap = rotated();
+                Bitmap bitmap = renderPhoto();
                 try (OutputStream output = getContentResolver().openOutputStream(uri)) {
                     if (output == null) throw new IllegalStateException("Çıktı açılamadı");
-                    android.graphics.Paint paint = new android.graphics.Paint();
-                    paint.setColorFilter(photoFilter());
-                    Bitmap processedBitmap = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), Bitmap.Config.ARGB_8888);
-                    new android.graphics.Canvas(processedBitmap).drawBitmap(bitmap, 0, 0, paint);
-                    processedBitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
-                    processedBitmap.recycle();
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
                 }
-                if (bitmap != photo) bitmap.recycle();
+                bitmap.recycle();
                 toast("Fotoğraf kaydedildi");
             }
         } catch (Exception error) { toast("İşlem başarısız: " + error.getMessage()); }
