@@ -264,9 +264,9 @@ public class MainActivity extends Activity {
         float c = contrast / 100f;
         float offset = (1f-c)*127.5f + brightness;
         ColorMatrix matrix = new ColorMatrix(new float[]{
-            c,0,0,0,offset,
-            0,c,0,0,offset,
-            0,0,c,0,offset,
+            c,0,0,0,offset + warmth * 0.42f,
+            0,c,0,0,offset + warmth * 0.08f,
+            0,0,c,0,offset - warmth * 0.42f,
             0,0,0,1,0
         });
         ColorMatrix saturationMatrix = new ColorMatrix();
@@ -371,7 +371,7 @@ public class MainActivity extends Activity {
             intent.putExtra(Intent.EXTRA_TITLE, "video_atolye_kirpildi.mp4");
             startActivityForResult(intent, 104);
         });
-        label("Not: Kırpma en yakın anahtar kareden başlayabilir. Bu sürümde görüntü döndürme ve katmanlar henüz yok.", 14);
+        label("Not: Kırpma en yakın anahtar kareden başlayabilir. Video döndürme dışa aktarımda yön bilgisiyle uygulanır; çok katmanlı kurgu henüz yok.", 14);
     }
     private void trimVideo(Uri destination) {
         final Uri source = video;
