@@ -46,7 +46,9 @@ public class MainActivity extends Activity {
     private boolean exportMute = false;
     private int videoRotation = 0;
     private VideoView videoPreview;
-    private static final int PHOTO = 101, VIDEO = 102, SAVE = 103;
+    private static final int PHOTO = 101, VIDEO = 102, SAVE = 103, AUDIO = 108;
+    private Uri audioUri;
+    private android.media.MediaPlayer audioPlayer;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -85,7 +87,54 @@ public class MainActivity extends Activity {
         button("🎬 Video seç", () -> videoEditor());
         button("✨ Otomatik montaj (geliştiriliyor)", () -> planned("Otomatik montaj"));
         button("✍️ Yazarak montaj (geliştiriliyor)", () -> planned("Yazarak montaj"));
-        button("🎵 Ses ve efekt kütüphanesi (geliştiriliyor)", () -> planned("Ses ve efekt kütüphanesi"));
+        button("🎵 Ses stüdyosu", () -> audioStudio());
+    }
+    private void audioStudio() {
+        screen("Ses Stüdyosu");
+        button("＋ Telefondan müzik veya ses seç", () -> pick("audio/*", AUDIO));
+        if (audioUri == null) {
+            label("Telefonundan bir ses dosyası seç. Oynat, duraklat ve ses seviyesini ayarla.", 16);
+            return;
+        }
+        label("Seçili ses: " + audioUri.getLastPathSegment(), 15);
+        button("▶ Oynat", () -> {
+            try {
+                if (audioPlayer == null) {
+                    audioPlayer = new android.media.MediaPlayer();
+                    audioPlayer.setDataSource(this, audioUri);
+                    audioPlayer.prepare();
+                }
+                audioPlayer.start();
+            } catch (Exception e) { releaseAudio(); toast("Ses açılamadı: " + e.getMessage()); }
+        });
+        button("⏸ Duraklat", () -> { if (audioPlayer != null && audioPlayer.isPlaying()) audioPlayer.pause(); });
+        button("⏹ Durdur", () -> {
+            if (audioPlayer != null) {
+                audioPlayer.pause();
+                audioPlayer.seekTo(0);
+            }
+        });
+        label("Ses seviyesi", 16);
+        SeekBar volume = new SeekBar(this);
+        volume.setMax(100); volume.setProgress(100); layout.addView(volume);
+        volume.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
+                if (audioPlayer != null) audioPlayer.setVolume(value / 100f, value / 100f);
+            }
+            public void onStartTrackingTouch(SeekBar bar) {}
+            public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        label("Bu stüdyo seçilen ses dosyasını oynatır. Video üzerine ses ekleme henüz uygulanmadı.", 14);
+    }
+    private void releaseAudio() {
+        if (audioPlayer != null) {
+            audioPlayer.release();
+            audioPlayer = null;
+        }
+    }
+    @Override protected void onDestroy() {
+        releaseAudio();
+        super.onDestroy();
     }
     private void planned(String name) {
         screen(name);
@@ -451,6 +500,10 @@ public class MainActivity extends Activity {
                 brightness = 0;
                 contrast = 100; saturation = 100; flipHorizontal = false; flipVertical = false; cropMode = 0; grayscale = 0; photoCaption = ""; captionSize = 42; warmth=0; vignette=0; photoPreset=0;
                 photoEditor();
+            } else if (request == AUDIO) {
+                releaseAudio();
+                audioUri = uri;
+                audioStudio();
             } else if (request == VIDEO) {
                 video = uri;
                 videoEditor();
