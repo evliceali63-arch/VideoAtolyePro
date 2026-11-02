@@ -386,6 +386,32 @@ public class MainActivity extends Activity {
             } else toast("Ses kontrolü bu Android sürümünde desteklenmiyor");
         });
         button("Başa sar", () -> videoPreview.seekTo(0));
+        label("Önizleme oynatma hızı", 16);
+        SeekBar speedControl = new SeekBar(this);
+        speedControl.setMax(3);
+        speedControl.setProgress(videoSpeed == 0.5f ? 0 : videoSpeed == 1.5f ? 2 : videoSpeed == 2f ? 3 : 1);
+        layout.addView(speedControl);
+        label("Hız seçenekleri: 0.5x / 1x / 1.5x / 2x", 14);
+        speedControl.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
+                if (!fromUser) return;
+                videoSpeed = new float[]{0.5f, 1f, 1.5f, 2f}[value];
+                if (android.os.Build.VERSION.SDK_INT >= 23) {
+                    try {
+                        videoPreview.setOnPreparedListener(mp -> {
+                            videoDurationMs = mp.getDuration();
+                            mp.setLooping(true);
+                            mp.setPlaybackParams(mp.getPlaybackParams().setSpeed(videoSpeed));
+                            mp.start();
+                        });
+                        videoPreview.setVideoURI(video);
+                        toast("Önizleme hızı: " + videoSpeed + "x");
+                    } catch (Exception e) { toast("Hız değiştirilemedi: " + e.getMessage()); }
+                }
+            }
+            public void onStartTrackingTouch(SeekBar bar) {}
+            public void onStopTrackingTouch(SeekBar bar) {}
+        });
         button("Dışa aktarmada sesi kaldır: " + (exportMute ? "EVET" : "HAYIR"), () -> { exportMute = !exportMute; videoEditor(); });
         button("Dışa aktarmada 90° döndür", () -> { videoRotation=(videoRotation+90)%360; toast("Döndürme: "+videoRotation+" derece"); });
         button("▶ Oynat / Duraklat", () -> {
@@ -420,7 +446,7 @@ public class MainActivity extends Activity {
             intent.putExtra(Intent.EXTRA_TITLE, "video_atolye_kirpildi.mp4");
             startActivityForResult(intent, 104);
         });
-        label("Not: Kırpma en yakın anahtar kareden başlayabilir. Video döndürme dışa aktarımda yön bilgisiyle uygulanır; çok katmanlı kurgu henüz yok.", 14);
+        label("Not: Hız ayarı yalnız önizlemede geçerlidir. Kırpma anahtar kareden başlayabilir. Video döndürme dışa aktarımda yön bilgisiyle uygulanır; çok katmanlı kurgu henüz yok.", 14);
     }
     private void trimVideo(Uri destination) {
         final Uri source = video;
