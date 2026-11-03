@@ -61,6 +61,13 @@ public class MainActivity extends Activity {
         layout.setPadding(24, 28, 24, 24);
         layout.setBackgroundColor(0xff10141e);
         scroll.addView(layout);
+        if(android.os.Build.VERSION.SDK_INT>=35){
+            scroll.setBackgroundColor(0xff10141e);
+            scroll.setOnApplyWindowInsetsListener((v,insets)->{
+                android.graphics.Insets bars=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());
+                v.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;
+            });
+        }
         setContentView(scroll);
         button("← Ana sayfa", () -> home());
         label(heading, 26);
@@ -83,7 +90,7 @@ public class MainActivity extends Activity {
     private void home() {
         screen("Video Atölye Pro");
         label("Video Atölye Pro • Geliştirme sürümü", 15);
-        button("📸 Fotoğraf düzenle", () -> photoEditor());
+        button("📸 Fotoğraf Stüdyosu", () -> startActivity(new Intent(this, PhotoEditorActivity.class)));
         button("🎬 Video seç", () -> videoEditor());
         button("🎞 Çoklu video montaj", () -> montageStudio());
         button("✨ Otomatik montaj (geliştiriliyor)", () -> planned("Otomatik montaj"));
@@ -182,7 +189,9 @@ public class MainActivity extends Activity {
                                 if(size<0)break;
                                 info.offset=0;info.size=size;
                                 info.presentationTimeUs=timeline+Math.max(0,stamp-first);
-                                info.flags=extractor.getSampleFlags();
+                                if((extractor.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_ENCRYPTED)!=0)throw new java.io.IOException("Şifreli medya desteklenmiyor");
+                                info.flags=(extractor.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_SYNC)!=0 ? MediaCodec.BUFFER_FLAG_KEY_FRAME : 0;
+                                if((extractor.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME)!=0)info.flags |= MediaCodec.BUFFER_FLAG_PARTIAL_FRAME;
                                 muxer.writeSampleData(outputTracks[t],buffer,info);
                                 last=stamp;
                                 if(!extractor.advance())break;
@@ -604,7 +613,9 @@ public class MainActivity extends Activity {
                         if (size < 0) break;
                         info.offset=0; info.size=size;
                         info.presentationTimeUs=time;
-                        info.flags=extractor.getSampleFlags();
+                        if((extractor.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_ENCRYPTED)!=0)throw new java.io.IOException("Şifreli medya desteklenmiyor");
+                        info.flags=(extractor.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_SYNC)!=0 ? MediaCodec.BUFFER_FLAG_KEY_FRAME : 0;
+                        if((extractor.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME)!=0)info.flags |= MediaCodec.BUFFER_FLAG_PARTIAL_FRAME;
                         muxer.writeSampleData(mapping[track],buffer,info);
                     }
                     if (!extractor.advance()) break;
