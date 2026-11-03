@@ -19,8 +19,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Test photo studio and build debug APK
+        run: gradle testDebugUnitTest assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         if: success()
         with:
