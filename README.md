@@ -52,7 +52,9 @@ Başka anahtarla imzalanmış APK mevcut uygulamanın üzerine güncellenemez.
 
 ## Test
 
-`app/src/androidTest` altında Android cihazında çalışan testler bulunur:
+`app/src/test` altında 6 Android benzetim testi, `app/src/androidTest` altında
+Android cihazında çalışan 8 senaryo bulunur. Sonuçlar `TEST-SONUCLARI.md` dosyasında.
+Kapsam:
 proje doğrulama/taslak süresi, fotoğraf renk/kadraj ve durum geri yükleme,
 farklı boyut/ses biçimindeki iki klibin müzik+yazı+hızla dışa aktarımı,
 yavaş/sessiz çıktı, stüdyo açılışı, kare analizi, PNG/JPEG kayıt ve iptal.
