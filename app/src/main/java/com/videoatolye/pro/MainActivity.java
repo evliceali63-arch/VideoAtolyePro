@@ -26,6 +26,18 @@ public class MainActivity extends Activity {
     private LinearLayout layout;
     private ImageView preview;
     private Bitmap photo;
+    private Bitmap photoPreviewSource,previewBitmap;
+    private final java.util.ArrayDeque<String> photoUndo=new java.util.ArrayDeque<>(), photoRedo=new java.util.ArrayDeque<>();
+    private boolean photoBusy=false,atHome=false;
+    private String photoState() {
+        return rotation+","+brightness+","+contrast+","+saturation+","+warmth+","+vignette+","+grayscale+","+cropMode+","+flipHorizontal+","+flipVertical+","+captionSize+";"+photoCaption;
+    }
+    private void restorePhotoState(String state) {
+        String[] a=state.split(";",2),v=a[0].split(",");
+        rotation=Integer.parseInt(v[0]);brightness=Integer.parseInt(v[1]);contrast=Integer.parseInt(v[2]);saturation=Integer.parseInt(v[3]);warmth=Integer.parseInt(v[4]);vignette=Integer.parseInt(v[5]);grayscale=Integer.parseInt(v[6]);cropMode=Integer.parseInt(v[7]);flipHorizontal=Boolean.parseBoolean(v[8]);flipVertical=Boolean.parseBoolean(v[9]);captionSize=Integer.parseInt(v[10]);photoCaption=a[1];
+    }
+    private void photoCheckpoint(String before){if(!before.equals(photoState())){photoUndo.push(before);if(photoUndo.size()>30)photoUndo.removeLast();photoRedo.clear();}}
+
     private int rotation = 0;
     private Uri video;
     private long videoDurationMs = 0;
@@ -52,17 +64,26 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().setStatusBarColor(0xff10141e);
+        getWindow().setNavigationBarColor(0xff10141e);
         home();
     }
     private void screen(String heading) {
+        atHome=false;
+        if(preview!=null)preview.setImageDrawable(null);
+        if(previewBitmap!=null){previewBitmap.recycle();previewBitmap=null;}
+        preview=null;
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(0xff10141e);
         layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(24, 28, 24, 24);
+        layout.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(24,28+insets.getSystemWindowInsetTop(),24,24+insets.getSystemWindowInsetBottom());return insets;});
         layout.setBackgroundColor(0xff10141e);
         scroll.addView(layout);
         setContentView(scroll);
-        button("← Ana sayfa", () -> home());
+        if(!heading.equals("Video Atölye Pro"))button("← Ana sayfa", () -> home());
         label(heading, 26);
     }
     private void label(String value, int size) {
@@ -77,245 +98,39 @@ public class MainActivity extends Activity {
         Button button = new Button(this);
         button.setText(name);
         button.setAllCaps(false);
+        button.setTextColor(0xffeff6ff);
+        button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff26394f));
         layout.addView(button);
-        button.setOnClickListener(v -> action.run());
+        button.setOnClickListener(v -> {
+            if(photoBusy)return;
+            String before=photoState();
+            try {action.run();if(!name.startsWith("↶ Son")&&!name.startsWith("↷"))photoCheckpoint(before);}
+            catch(Exception e){toast("İşlem tamamlanamadı: "+e.getMessage());}
+        });
     }
     private void home() {
         screen("Video Atölye Pro");
-        label("Video Atölye Pro • Geliştirme sürümü", 15);
-        button("📸 Fotoğraf düzenle", () -> photoEditor());
-        button("🎬 Video seç", () -> videoEditor());
-        button("🎞 Çoklu video montaj", () -> montageStudio());
-        button("✨ Otomatik montaj (geliştiriliyor)", () -> planned("Otomatik montaj"));
-        button("✍️ Yazarak montaj (geliştiriliyor)", () -> planned("Yazarak montaj"));
-        button("🎵 Ses stüdyosu", () -> audioStudio());
+        label("0.3 • Telefonunda düzenle, filigransız kaydet", 16);
+        button("🎬 Video ve çoklu montaj stüdyosu", () -> startActivity(new Intent(this,StudioActivity.class)));
+        button("📸 Fotoğraf stüdyosu", () -> photoEditor());
+        label("Video: kes, böl, sırala, hız ve renk ayarla; müzik ve yazı ekle. Projeler otomatik saklanır.",16);
+        label("Fotoğraf: ışık, renk, kadraj, filtre ve yazı. Kaynakların üzerine yazılmaz.",16);
+        button("Sürümdeki sınırlar", () -> new android.app.AlertDialog.Builder(this).setTitle("0.3 sürümü")
+            .setMessage("Yerel fotoğraf ve video düzenleme.\nOtomatik taslak seçimi süre kuralları kullanır.\nYazarak ayarlama desteklenen komutlarla sınırlıdır.\nİçerik anlayan AI, otomatik konuşma altyazısı, takip, nesne silme ve serbest çok katmanlı timeline bu sürümde yok.\nFotoğraf çalışma kopyası en fazla 4096 piksel uzun kenara indirilir; RAW iş akışı yok.")
+            .setPositiveButton("Tamam",null).show());
+        atHome=true;
     }
 
-    private final java.util.ArrayList<Uri> montageClips = new java.util.ArrayList<>();
-    private static final int MONTAGE_PICK=109, MONTAGE_SAVE=110;
-    private void montageStudio(){
-        screen("Çoklu Video Montaj");
-        label("Birden fazla klip seç, sırasını değiştir ve uyumlu klipleri tek MP4 dosyasında birleştir.",16);
-        button("＋ Video ekle",()->{
-            Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            i.setType("video/*");i.addCategory(Intent.CATEGORY_OPENABLE);
-            i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);
-            startActivityForResult(i,MONTAGE_PICK);
-        });
-        for(int n=0;n<montageClips.size();n++){
-            final int index=n;
-            label((n+1)+". "+montageClips.get(n).getLastPathSegment(),14);
-            button("↑ Öne taşı",()->{if(index>0){java.util.Collections.swap(montageClips,index,index-1);montageStudio();}});
-            button("✕ Çıkar",()->{montageClips.remove(index);montageStudio();});
-        }
-        button("Listeyi temizle",()->{montageClips.clear();montageStudio();});
-        button("⬇ MP4 birleştir",()->{
-            if(montageClips.size()<2){toast("En az iki video ekle");return;}
-            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            i.setType("video/mp4");i.addCategory(Intent.CATEGORY_OPENABLE);
-            i.putExtra(Intent.EXTRA_TITLE,"video_atolye_montaj.mp4");
-            startActivityForResult(i,MONTAGE_SAVE);
-        });
-        label("Hızlı birleştirme: aynı kodek, çözünürlük ve ses biçimindeki klipler desteklenir. Geçiş efektleri ve farklı biçimleri dönüştürme henüz yok.",14);
-    }
-    private void exportMontage(Uri destination){
-        final java.util.ArrayList<Uri> clips=new java.util.ArrayList<>(montageClips);
-        new Thread(()->{
-            MediaMuxer muxer=null;
-            android.os.ParcelFileDescriptor output=null;
-            boolean started=false,done=false;
-            try{
-                output=getContentResolver().openFileDescriptor(destination,"w");
-                if(output==null)throw new Exception("Çıktı açılamadı");
-                muxer=new MediaMuxer(output.getFileDescriptor(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-                java.util.ArrayList<MediaFormat> reference=new java.util.ArrayList<>();
-                int[] outputTracks=null;
-                long timeline=0;
-                for(int clip=0;clip<clips.size();clip++){
-                    MediaExtractor extractor=new MediaExtractor();
-                    try{
-                        extractor.setDataSource(this,clips.get(clip),null);
-                        java.util.ArrayList<MediaFormat> formats=new java.util.ArrayList<>();
-                        java.util.ArrayList<Integer> tracks=new java.util.ArrayList<>();
-                        for(int t=0;t<extractor.getTrackCount();t++){
-                            MediaFormat format=extractor.getTrackFormat(t);
-                            String mime=format.getString(MediaFormat.KEY_MIME);
-                            if(mime!=null&&(mime.startsWith("video/")||mime.startsWith("audio/"))){
-                                formats.add(format);tracks.add(t);
-                            }
-                        }
-                        if(formats.isEmpty())throw new Exception("Klipte medya izi yok");
-                        if(clip==0){
-                            outputTracks=new int[formats.size()];
-                            for(int t=0;t<formats.size();t++){
-                                reference.add(formats.get(t));
-                                outputTracks[t]=muxer.addTrack(formats.get(t));
-                            }
-                            muxer.start();started=true;
-                        }else{
-                            if(formats.size()!=reference.size())throw new Exception("Kliplerin iz sayısı farklı");
-                            for(int t=0;t<formats.size();t++){
-                                MediaFormat a=reference.get(t),b=formats.get(t);
-                                if(!a.getString(MediaFormat.KEY_MIME).equals(b.getString(MediaFormat.KEY_MIME)))
-                                    throw new Exception("Kliplerin kodekleri farklı");
-                                for(String key:new String[]{MediaFormat.KEY_WIDTH,MediaFormat.KEY_HEIGHT,MediaFormat.KEY_SAMPLE_RATE,MediaFormat.KEY_CHANNEL_COUNT}){
-                                    if(a.containsKey(key)!=b.containsKey(key)||(a.containsKey(key)&&a.getInteger(key)!=b.getInteger(key)))
-                                        throw new Exception("Kliplerin biçimleri farklı");
-                                }
-                            }
-                        }
-                        long clipLength=0;
-                        ByteBuffer buffer=ByteBuffer.allocateDirect(8*1024*1024);
-                        MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
-                        for(int t=0;t<tracks.size();t++){
-                            extractor.selectTrack(tracks.get(t));
-                            extractor.seekTo(0,MediaExtractor.SEEK_TO_CLOSEST_SYNC);
-                            long first=-1,last=-1;
-                            while(extractor.getSampleTrackIndex()>=0){
-                                if(extractor.getSampleTrackIndex()!=tracks.get(t)){
-                                    extractor.advance();continue;
-                                }
-                                long stamp=extractor.getSampleTime();
-                                if(first<0)first=stamp;
-                                buffer.clear();
-                                int size=extractor.readSampleData(buffer,0);
-                                if(size<0)break;
-                                info.offset=0;info.size=size;
-                                info.presentationTimeUs=timeline+Math.max(0,stamp-first);
-                                info.flags=extractor.getSampleFlags();
-                                muxer.writeSampleData(outputTracks[t],buffer,info);
-                                last=stamp;
-                                if(!extractor.advance())break;
-                            }
-                            if(last>=first&&first>=0)clipLength=Math.max(clipLength,last-first+33333);
-                            extractor.unselectTrack(tracks.get(t));
-                            extractor.seekTo(0,MediaExtractor.SEEK_TO_CLOSEST_SYNC);
-                        }
-                        timeline+=Math.max(33333,clipLength);
-                    }finally{extractor.release();}
-                }
-                muxer.stop();started=false;done=true;
-                runOnUiThread(()->toast("Montaj MP4 kaydedildi"));
-            }catch(Exception e){
-                final String message=e.getMessage();
-                runOnUiThread(()->toast("Birleştirme başarısız: "+message));
-            }finally{
-                if(muxer!=null)try{if(started)muxer.stop();}catch(Exception ignored){}
-                if(muxer!=null)try{muxer.release();}catch(Exception ignored){}
-                if(output!=null)try{output.close();}catch(Exception ignored){}
-            }
-        }).start();
-    }
-    private void audioStudio() {
-        screen("Ses Stüdyosu");
-        button("＋ Telefondan müzik veya ses seç", () -> pick("audio/*", AUDIO));
-        if (audioUri == null) {
-            label("Telefonundan bir ses dosyası seç. Oynat, duraklat ve ses seviyesini ayarla.", 16);
-            return;
-        }
-        label("Seçili ses: " + audioUri.getLastPathSegment(), 15);
-        button("▶ Oynat", () -> {
-            try {
-                if (audioPlayer == null) {
-                    audioPlayer = new android.media.MediaPlayer();
-                    audioPlayer.setDataSource(this, audioUri);
-                    audioPlayer.prepare();
-                }
-                audioPlayer.start();
-            } catch (Exception e) { releaseAudio(); toast("Ses açılamadı: " + e.getMessage()); }
-        });
-        button("⏸ Duraklat", () -> { if (audioPlayer != null && audioPlayer.isPlaying()) audioPlayer.pause(); });
-        button("⏹ Durdur", () -> {
-            if (audioPlayer != null) {
-                audioPlayer.pause();
-                audioPlayer.seekTo(0);
-            }
-        });
-        label("Ses seviyesi", 16);
-        SeekBar volume = new SeekBar(this);
-        volume.setMax(100); volume.setProgress(100); layout.addView(volume);
-        volume.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
-                if (audioPlayer != null) audioPlayer.setVolume(value / 100f, value / 100f);
-            }
-            public void onStartTrackingTouch(SeekBar bar) {}
-            public void onStopTrackingTouch(SeekBar bar) {}
-        });
-        label("Bu stüdyo seçilen ses dosyasını oynatır. Video üzerine ses ekleme henüz uygulanmadı.", 14);
-    }
-    private void releaseAudio() {
-        if (audioPlayer != null) {
-            audioPlayer.release();
-            audioPlayer = null;
-        }
+    private void pick(String mime,int request) {
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType(mime).addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(intent,request);
     }
     @Override protected void onDestroy() {
-        releaseAudio();
+        if(preview!=null)preview.setImageDrawable(null);
+        if(previewBitmap!=null)previewBitmap.recycle();
+        if(photoPreviewSource!=null&&photoPreviewSource!=photo)photoPreviewSource.recycle();
+        if(photo!=null&&!photoBusy)photo.recycle();
         super.onDestroy();
-    }
-    private void planned(String name) {
-        screen(name);
-        label("Bu özellik henüz uygulanmadı. Gelecek sürümde geliştirilecek.", 16);
-    }
-    private void pick(String mime, int request) {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.setType(mime);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        startActivityForResult(intent, request);
-    }
-    private LinearLayout photoTools;
-    private void toolButton(LinearLayout target,String name,Runnable action) {
-        Button b=new Button(this); b.setText(name); b.setAllCaps(false);
-        target.addView(b); b.setOnClickListener(v->action.run());
-    }
-    private SeekBar toolSlider(LinearLayout target,String name,int max,int value,java.util.function.IntConsumer changed) {
-        TextView t=new TextView(this); t.setText(name);t.setTextColor(0xffffffff);t.setTextSize(15);t.setPadding(10,8,10,2);target.addView(t);
-        SeekBar bar=new SeekBar(this);bar.setMax(max);bar.setProgress(value);target.addView(bar);
-        bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar v,int p,boolean fromUser) {if(fromUser) changed.accept(p);}
-            public void onStartTrackingTouch(SeekBar v) {}
-            public void onStopTrackingTouch(SeekBar v) {}
-        });
-        return bar;
-    }
-    private void photoTab(String tab) {
-        photoTools.removeAllViews();
-        if(tab.equals("Kadraj")) {
-            toolButton(photoTools,"90° döndür",()->{rotation=(rotation+90)%360;showPhoto();});
-            toolButton(photoTools,"Yatay çevir",()->{flipHorizontal=!flipHorizontal;showPhoto();});
-            toolButton(photoTools,"Dikey çevir",()->{flipVertical=!flipVertical;showPhoto();});
-            String[] names={"Serbest","1:1 kare","4:5","9:16","16:9"};
-            for(int i=0;i<names.length;i++) {
-                final int mode=i;
-                toolButton(photoTools,names[i],()->{cropMode=mode;showPhoto();});
-            }
-        } else if(tab.equals("Renk")) {
-            toolSlider(photoTools,"Parlaklık",200,brightness+100,p->{brightness=p-100;showPhoto();});
-            toolSlider(photoTools,"Kontrast",200,contrast,p->{contrast=p;showPhoto();});
-            toolSlider(photoTools,"Doygunluk",200,saturation,p->{saturation=p;showPhoto();});
-            toolButton(photoTools,"Siyah-beyaz",()->{grayscale=grayscale==0?1:0;showPhoto();});
-        } else if(tab.equals("Yazı")) {
-            EditText field=new EditText(this);
-            field.setSingleLine(true);field.setTextColor(0xffffffff);field.setHintTextColor(0xffbbbbbb);
-            field.setHint("Fotoğraf üzerine yazı");field.setText(photoCaption);photoTools.addView(field);
-            toolButton(photoTools,"Yazıyı uygula",()->{photoCaption=field.getText().toString();showPhoto();});
-            toolButton(photoTools,"Yazıyı kaldır",()->{photoCaption="";field.setText("");showPhoto();});
-            toolSlider(photoTools,"Yazı boyutu",100,captionSize,p->{captionSize=Math.max(12,p);showPhoto();});
-        } else if(tab.equals("Kaydet")) {
-            toolButton(photoTools,"PNG olarak kaydet",()->savePhoto("image/png","video_atolye_fotograf.png",SAVE));
-            toolButton(photoTools,"JPEG olarak kaydet",()->savePhoto("image/jpeg","video_atolye_fotograf.jpg",107));
-            toolButton(photoTools,"Bütün ayarları sıfırla",()->{
-                rotation=0;brightness=0;contrast=100;saturation=100;
-                flipHorizontal=false;flipVertical=false;cropMode=0;grayscale=0;photoCaption="";captionSize=42;
-                showPhoto();photoTab("Kaydet");
-            });
-        }
-    }
-    private void savePhoto(String type,String name,int code) {
-        if(photo==null){toast("Önce fotoğraf seç");return;}
-        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.setType(type);intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.putExtra(Intent.EXTRA_TITLE,name);startActivityForResult(intent,code);
     }
     private void photoEditor() {
         screen("Fotoğraf Stüdyosu");
@@ -330,6 +145,10 @@ public class MainActivity extends Activity {
         preview.setBackgroundColor(0xff080a0f);
         layout.addView(preview, new LinearLayout.LayoutParams(-1, -2));
         showPhoto();
+        label(photo.getWidth()+" × "+photo.getHeight()+" px çalışma kopyası",14);
+        button("↶ Son değişikliği geri al",()->{if(!photoUndo.isEmpty()){photoRedo.push(photoState());restorePhotoState(photoUndo.pop());photoEditor();}});
+        button("↷ Değişikliği yinele",()->{if(!photoRedo.isEmpty()){photoUndo.push(photoState());restorePhotoState(photoRedo.pop());photoEditor();}});
+        button("Orijinal / düzenlenmiş karşılaştır",()->{if(preview.getTag()==null){preview.setImageBitmap(photoPreviewSource);preview.setTag("original");}else{preview.setTag(null);showPhoto();}});
         button("↶ Tüm düzenlemeleri sıfırla", () -> {
             rotation=0; brightness=0; contrast=100; saturation=100;
             warmth=0; vignette=0; grayscale=0; cropMode=0;
@@ -375,7 +194,8 @@ public class MainActivity extends Activity {
             photoSlider("Kenar karartma",vignette,100,v -> vignette=v);
         } else {
             EditText captionInput=new EditText(this);
-            captionInput.setSingleLine(true);
+            captionInput.setMinLines(2);
+            captionInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(240)});
             captionInput.setTextColor(0xffffffff);
             captionInput.setHintTextColor(0xffaaaaaa);
             captionInput.setHint("Fotoğrafa yazı ekle");
@@ -398,8 +218,9 @@ public class MainActivity extends Activity {
             public void onProgressChanged(SeekBar bar,int v,boolean user){
                 if(user){change.apply(v);showPhoto();}
             }
-            public void onStartTrackingTouch(SeekBar bar){}
-            public void onStopTrackingTouch(SeekBar bar){}
+            private String before;
+            public void onStartTrackingTouch(SeekBar bar){before=photoState();}
+            public void onStopTrackingTouch(SeekBar bar){if(before!=null)photoCheckpoint(before);}
         });
     }
     private void savePhoto(boolean jpeg) {
@@ -410,11 +231,11 @@ public class MainActivity extends Activity {
         intent.putExtra(Intent.EXTRA_TITLE,jpeg?"video_atolye_fotograf.jpg":"video_atolye_fotograf.png");
         startActivityForResult(intent,jpeg?107:SAVE);
     }
-    private Bitmap rotated() {
+    private Bitmap rotated(Bitmap source) {
         Matrix matrix = new Matrix();
         matrix.postRotate(rotation);
         if (flipHorizontal || flipVertical) matrix.postScale(flipHorizontal ? -1f : 1f, flipVertical ? -1f : 1f);
-        Bitmap transformed = Bitmap.createBitmap(photo, 0, 0, photo.getWidth(), photo.getHeight(), matrix, true);
+        Bitmap transformed = Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
         if (cropMode == 0) return transformed;
         float[] ratios = {0f,1f,4f/5f,9f/16f,16f/9f};
         float target = ratios[cropMode];
@@ -423,7 +244,7 @@ public class MainActivity extends Activity {
         if ((float)w/h > target) cropW = Math.max(1,Math.round(h*target));
         else cropH = Math.max(1,Math.round(w/target));
         Bitmap cropped = Bitmap.createBitmap(transformed,(w-cropW)/2,(h-cropH)/2,cropW,cropH);
-        if (cropped != transformed && transformed != photo) transformed.recycle();
+        if (cropped != transformed && transformed != source) transformed.recycle();
         return cropped;
     }
     private ColorMatrixColorFilter photoFilter() {
@@ -440,8 +261,9 @@ public class MainActivity extends Activity {
         matrix.postConcat(saturationMatrix);
         return new ColorMatrixColorFilter(matrix);
     }
-    private Bitmap renderPhoto() {
-        Bitmap bitmap = rotated();
+    private Bitmap renderPhoto() { return renderPhoto(photo); }
+    private Bitmap renderPhoto(Bitmap source) {
+        Bitmap bitmap = rotated(source);
         Bitmap output = Bitmap.createBitmap(bitmap.getWidth(),bitmap.getHeight(),Bitmap.Config.ARGB_8888);
         android.graphics.Canvas canvas = new android.graphics.Canvas(output);
         android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG | android.graphics.Paint.FILTER_BITMAP_FLAG);
@@ -458,217 +280,87 @@ public class MainActivity extends Activity {
             canvas.drawRect(0,0,output.getWidth(),output.getHeight(),shade);
         }
         if (!photoCaption.isEmpty()) {
-            android.graphics.Paint shadow = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-            float size = Math.max(20f, output.getWidth() * captionSize / 900f);
-            shadow.setTextSize(size);
-            shadow.setTypeface(android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD));
-            shadow.setTextAlign(android.graphics.Paint.Align.CENTER);
-            shadow.setColor(0xffffffff);
-            shadow.setShadowLayer(size/8f,2f,2f,0xff000000);
-            float x = output.getWidth()/2f, y = output.getHeight()*0.86f;
-            canvas.drawText(photoCaption,x,y,shadow);
+            android.text.TextPaint text = new android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            float size = Math.max(12f, output.getWidth() * captionSize / 900f);
+            text.setTextSize(size);text.setColor(0xffffffff);
+            text.setTypeface(android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD));
+            text.setShadowLayer(size/8f,2f,2f,0xff000000);
+            int width=Math.max(1,(int)(output.getWidth()*.90));
+            android.text.StaticLayout block=android.text.StaticLayout.Builder.obtain(photoCaption,0,photoCaption.length(),text,width)
+                .setAlignment(android.text.Layout.Alignment.ALIGN_CENTER).setMaxLines(8).setEllipsize(android.text.TextUtils.TruncateAt.END).build();
+            canvas.save();canvas.translate((output.getWidth()-width)/2f,Math.max(0,output.getHeight()*.90f-block.getHeight()));block.draw(canvas);canvas.restore();
         }
-        if (bitmap != photo) bitmap.recycle();
+
+        if (bitmap != source) bitmap.recycle();
         return output;
     }
     private void showPhoto() {
         if (preview != null && photo != null) {
-            preview.setImageBitmap(renderPhoto());
+            Bitmap next=renderPhoto(photoPreviewSource==null?photo:photoPreviewSource);
+            preview.setImageBitmap(next);
+            preview.setTag(null);
+            if(previewBitmap!=null&&previewBitmap!=photo&&previewBitmap!=photoPreviewSource)previewBitmap.recycle();
+            previewBitmap=next;
             preview.clearColorFilter();
         }
     }
-    private void videoEditor() {
-        screen("Video editörü");
-        button("Galeriden video seç", () -> pick("video/*", VIDEO));
-        if (video == null) { label("Henüz video seçilmedi", 16); return; }
-        videoPreview = new VideoView(this);
-        layout.addView(videoPreview, new LinearLayout.LayoutParams(-1, 650));
-        videoPreview.setVideoURI(video);
-        videoPreview.setOnPreparedListener(mp -> {
-            videoDurationMs = mp.getDuration();
-            mp.setLooping(true);
-            videoPreview.start();
-        });
-        button("⏪ 10 saniye geri", () -> videoPreview.seekTo(Math.max(0,videoPreview.getCurrentPosition()-10000)));
-        button("⏩ 10 saniye ileri", () -> videoPreview.seekTo(Math.min(videoPreview.getDuration(),videoPreview.getCurrentPosition()+10000)));
-        button("🔇 Sesi aç / kapat", () -> {
-            videoMuted = !videoMuted;
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                videoPreview.setOnPreparedListener(mp -> {
-                    mp.setVolume(videoMuted ? 0f : 1f,videoMuted ? 0f : 1f);
-                    mp.setLooping(true);
-                    mp.start();
-                });
-                videoPreview.setVideoURI(video);
-            } else toast("Ses kontrolü bu Android sürümünde desteklenmiyor");
-        });
-        button("Başa sar", () -> videoPreview.seekTo(0));
-        label("Önizleme oynatma hızı", 16);
-        SeekBar speedControl = new SeekBar(this);
-        speedControl.setMax(3);
-        speedControl.setProgress(videoSpeed == 0.5f ? 0 : videoSpeed == 1.5f ? 2 : videoSpeed == 2f ? 3 : 1);
-        layout.addView(speedControl);
-        label("Hız seçenekleri: 0.5x / 1x / 1.5x / 2x", 14);
-        speedControl.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
-                if (!fromUser) return;
-                videoSpeed = new float[]{0.5f, 1f, 1.5f, 2f}[value];
-                if (android.os.Build.VERSION.SDK_INT >= 23) {
-                    try {
-                        videoPreview.setOnPreparedListener(mp -> {
-                            videoDurationMs = mp.getDuration();
-                            mp.setLooping(true);
-                            mp.setPlaybackParams(mp.getPlaybackParams().setSpeed(videoSpeed));
-                            mp.start();
-                        });
-                        videoPreview.setVideoURI(video);
-                        toast("Önizleme hızı: " + videoSpeed + "x");
-                    } catch (Exception e) { toast("Hız değiştirilemedi: " + e.getMessage()); }
-                }
-            }
-            public void onStartTrackingTouch(SeekBar bar) {}
-            public void onStopTrackingTouch(SeekBar bar) {}
-        });
-        button("Dışa aktarmada sesi kaldır: " + (exportMute ? "EVET" : "HAYIR"), () -> { exportMute = !exportMute; videoEditor(); });
-        button("Dışa aktarmada 90° döndür", () -> { videoRotation=(videoRotation+90)%360; toast("Döndürme: "+videoRotation+" derece"); });
-        button("▶ Oynat / Duraklat", () -> {
-            if (videoPreview.isPlaying()) videoPreview.pause(); else videoPreview.start();
-        });
-        label("Başlangıç (%)", 16);
-        SeekBar start = new SeekBar(this);
-        start.setMax(99); start.setProgress(trimStart);
-        layout.addView(start);
-        label("Bitiş (%)", 16);
-        SeekBar end = new SeekBar(this);
-        end.setMax(100); end.setProgress(trimEnd);
-        layout.addView(end);
-        start.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar v,int p,boolean u) {
-                trimStart = p;
-                if (u && videoDurationMs > 0) videoPreview.seekTo((int)(videoDurationMs*p/100));
-            }
-            public void onStartTrackingTouch(SeekBar v) {}
-            public void onStopTrackingTouch(SeekBar v) {}
-        });
-        end.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar v,int p,boolean u) { trimEnd = p; }
-            public void onStartTrackingTouch(SeekBar v) {}
-            public void onStopTrackingTouch(SeekBar v) {}
-        });
-        button("Kırpılmış MP4'ü kaydet", () -> {
-            if (trimEnd <= trimStart) { toast("Bitiş başlangıçtan sonra olmalı"); return; }
-            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            intent.setType("video/mp4");
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.putExtra(Intent.EXTRA_TITLE, "video_atolye_kirpildi.mp4");
-            startActivityForResult(intent, 104);
-        });
-        label("Not: Hız ayarı yalnız önizlemede geçerlidir. Kırpma anahtar kareden başlayabilir. Video döndürme dışa aktarımda yön bilgisiyle uygulanır; çok katmanlı kurgu henüz yok.", 14);
-    }
-    private void trimVideo(Uri destination) {
-        final Uri source = video;
-        final long startUs = videoDurationMs * 1000L * trimStart / 100L;
-        final long endUs = videoDurationMs * 1000L * trimEnd / 100L;
-        new Thread(() -> {
-            MediaExtractor extractor = new MediaExtractor();
-            MediaMuxer muxer = null;
-            android.os.ParcelFileDescriptor output = null;
-            try {
-                extractor.setDataSource(this, source, null);
-                output = getContentResolver().openFileDescriptor(destination, "w");
-                if (output == null) throw new IllegalStateException("Hedef dosya açılamadı");
-                muxer = new MediaMuxer(output.getFileDescriptor(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-                muxer.setOrientationHint(videoRotation);
-                int count = extractor.getTrackCount();
-                int[] mapping = new int[count];
-                for (int i=0;i<count;i++) {
-                    MediaFormat format = extractor.getTrackFormat(i);
-                    String mime = format.getString(MediaFormat.KEY_MIME);
-                    if (mime != null && (mime.startsWith("video/") || (!exportMute && mime.startsWith("audio/")))) {
-                        mapping[i] = muxer.addTrack(format);
-                        extractor.selectTrack(i);
-                    } else mapping[i] = -1;
-                }
-                muxer.start();
-                extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
-                ByteBuffer buffer = ByteBuffer.allocateDirect(8*1024*1024);
-                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-                while (true) {
-                    int track = extractor.getSampleTrackIndex();
-                    if (track < 0) break;
-                    long time = extractor.getSampleTime();
-                    if (time >= endUs) break;
-                    if (mapping[track] >= 0) {
-                        buffer.clear();
-                        int size = extractor.readSampleData(buffer,0);
-                        if (size < 0) break;
-                        info.offset=0; info.size=size;
-                        info.presentationTimeUs=time;
-                        info.flags=extractor.getSampleFlags();
-                        muxer.writeSampleData(mapping[track],buffer,info);
-                    }
-                    if (!extractor.advance()) break;
-                }
-                muxer.stop();
-                runOnUiThread(() -> toast("MP4 kaydedildi"));
-            } catch (Exception e) {
-                runOnUiThread(() -> toast("Video kaydedilemedi: " + e.getMessage()));
-            } finally {
-                extractor.release();
-                if (muxer != null) try { muxer.release(); } catch(Exception ignored) {}
-                if (output != null) try { output.close(); } catch(Exception ignored) {}
-            }
-        }).start();
-    }
+    @Override public void onBackPressed(){if(photoBusy)return;if(atHome)super.onBackPressed();else home();}
     private void toast(String message) { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (result != RESULT_OK || data == null) return;
-        if (request == MONTAGE_PICK) {
-            if (data.getClipData() != null) {
-                for (int i=0;i<data.getClipData().getItemCount();i++)
-                    montageClips.add(data.getClipData().getItemAt(i).getUri());
-            } else if (data.getData()!=null) montageClips.add(data.getData());
-            montageStudio();return;
-        }
         if(data.getData()==null)return;
         Uri uri = data.getData();
         try {
-            if (request == MONTAGE_SAVE) { exportMontage(uri); } else if (request == PHOTO) {
+            if (request == PHOTO) {
                 BitmapFactory.Options options = new BitmapFactory.Options();
                 options.inJustDecodeBounds = true;
                 try (InputStream input = getContentResolver().openInputStream(uri)) {
                     BitmapFactory.decodeStream(input, null, options);
                 }
+                if(options.outWidth<1||options.outHeight<1)throw new java.io.IOException("Desteklenmeyen fotoğraf");
+                long pixelBudget=Math.min(4096L*4096,Runtime.getRuntime().maxMemory()/32);
                 int sample = 1;
-                while (options.outWidth / sample > 2048 || options.outHeight / sample > 2048) sample *= 2;
+                while (options.outWidth / sample > 4096 || options.outHeight / sample > 4096 || (long)(options.outWidth/sample)*(options.outHeight/sample)>pixelBudget) sample *= 2;
+                Bitmap previousPhoto=photo;
                 options = new BitmapFactory.Options();
                 options.inSampleSize = sample;
                 try (InputStream input = getContentResolver().openInputStream(uri)) {
-                    photo = BitmapFactory.decodeStream(input, null, options);
+                    Bitmap decoded=BitmapFactory.decodeStream(input,null,options);
+                    if(decoded==null)throw new java.io.IOException("Fotoğraf çözümlenemedi");
+                    photo=decoded;
                 }
+                if(photo==null)throw new java.io.IOException("Fotoğraf çözümlenemedi");
+                try(InputStream input=getContentResolver().openInputStream(uri)){
+                    androidx.exifinterface.media.ExifInterface exif=new androidx.exifinterface.media.ExifInterface(input);
+                    int orientation=exif.getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,1);
+                    Matrix m=new Matrix();
+                    switch(orientation){case 2:m.setScale(-1,1);break;case 3:m.setRotate(180);break;case 4:m.setScale(1,-1);break;case 5:m.setRotate(90);m.postScale(-1,1);break;case 6:m.setRotate(90);break;case 7:m.setRotate(270);m.postScale(-1,1);break;case 8:m.setRotate(270);break;}
+                    if(!m.isIdentity()){Bitmap upright=Bitmap.createBitmap(photo,0,0,photo.getWidth(),photo.getHeight(),m,true);if(upright!=photo)photo.recycle();photo=upright;}
+                }catch(java.io.IOException ignored){}
+                if(photoPreviewSource!=null&&photoPreviewSource!=photo)photoPreviewSource.recycle();
+                float scale=Math.min(1f,1280f/Math.max(photo.getWidth(),photo.getHeight()));
+                photoPreviewSource=Bitmap.createScaledBitmap(photo,Math.max(1,Math.round(photo.getWidth()*scale)),Math.max(1,Math.round(photo.getHeight()*scale)),true);
+                if(previousPhoto!=null&&previousPhoto!=photo&&!previousPhoto.isRecycled())previousPhoto.recycle();
+                photoUndo.clear();photoRedo.clear();
                 rotation = 0;
                 brightness = 0;
                 contrast = 100; saturation = 100; flipHorizontal = false; flipVertical = false; cropMode = 0; grayscale = 0; photoCaption = ""; captionSize = 42; warmth=0; vignette=0; photoPreset=0;
                 photoEditor();
-            } else if (request == AUDIO) {
-                releaseAudio();
-                audioUri = uri;
-                audioStudio();
-            } else if (request == VIDEO) {
-                video = uri;
-                videoEditor();
-            } else if (request == 104 && video != null) {
-                trimVideo(uri);
             } else if ((request == SAVE || request == 107) && photo != null) {
-                Bitmap bitmap = renderPhoto();
-                try (OutputStream output = getContentResolver().openOutputStream(uri)) {
-                    if (output == null) throw new IllegalStateException("Çıktı açılamadı");
-                    bitmap.compress(request == 107 ? Bitmap.CompressFormat.JPEG : Bitmap.CompressFormat.PNG, request == 107 ? 92 : 100, output);
-                }
-                bitmap.recycle();
-                toast("Fotoğraf kaydedildi");
+                photoBusy=true;
+                getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                android.app.ProgressDialog dialog=new android.app.ProgressDialog(this);dialog.setMessage("Fotoğraf kaydediliyor…");dialog.setCancelable(false);dialog.show();
+                new Thread(()->{Bitmap bitmap=null;try{
+                    bitmap=renderPhoto();
+                    try(OutputStream output=getContentResolver().openOutputStream(uri,"wt")){
+                        if(output==null||!bitmap.compress(request==107?Bitmap.CompressFormat.JPEG:Bitmap.CompressFormat.PNG,request==107?95:100,output))throw new java.io.IOException("Fotoğraf yazılamadı");
+                    }
+                    runOnUiThread(()->toast("Fotoğraf kaydedildi"));
+                }catch(Exception|OutOfMemoryError e){runOnUiThread(()->toast("Kaydedilemedi: "+e.getMessage()));}
+                finally{if(bitmap!=null)bitmap.recycle();runOnUiThread(()->{photoBusy=false;getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);if(!isFinishing())dialog.dismiss();});}},"photo-export").start();
+
             }
-        } catch (Exception error) { toast("İşlem başarısız: " + error.getMessage()); }
+        } catch (Exception|OutOfMemoryError error) { toast("İşlem başarısız: " + error.getMessage()); }
     }
 }

@@ -18,11 +18,18 @@ jobs:
           ls "$ANDROID_HOME/platforms" || true
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+          gradle-version: '8.10.2'
+      - name: Verify and build debug APK
+        run: gradle lintDebug testDebugUnitTest assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         if: success()
         with:
           name: VideoAtolyePro-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: VideoAtolyePro-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.html
